@@ -104,10 +104,8 @@ def test_feed_matches_find():
     a = ACAutomaton()
     a.build(["ab", "bab", "a"])
     text = "ababxab"
-    # find 一次性
     a.reset()
     whole = a.find(text)
-    # feed 流式
     a.reset()
     stream = []
     for ch in text:
@@ -154,3 +152,83 @@ def test_reset_isolation():
     a.reset()                            # 清状态
     got = [a.feed(c) for c in "ab"]
     assert got == [[], [("ab", 0, 2)]]
+
+
+# ---------------- v3 新增 ----------------
+
+def test_chinese_patterns():
+    a = ACAutomaton()
+    a.build(["你好", "世界"])
+    r = a.find("你好世界你好")
+    assert r == [("你好", 0, 2), ("世界", 2, 4), ("你好", 4, 6)]
+
+
+def test_add_pattern_incremental():
+    a = ACAutomaton()
+    a.build(["he", "she"])
+    a.add_pattern("hers")
+    r = a.find("ushers")
+    assert ("she", 1, 4) in r
+    assert ("he", 2, 4) in r
+    assert ("hers", 2, 6) in r           # 新增模式跨 fail 链命中
+
+
+def test_add_pattern_overlap():
+    a = ACAutomaton()
+    a.build(["ab"])
+    a.add_pattern("bab")
+    assert a.find("abab") == [("ab", 0, 2), ("bab", 1, 4), ("ab", 2, 4)]
+
+
+def test_add_pattern_then_more():
+    a = ACAutomaton()
+    a.build(["he"])
+    a.add_pattern("she")
+    a.add_pattern("his")
+    a.add_pattern("hers")
+    r = a.find("ushers")
+    assert ("she", 1, 4) in r
+    assert ("he", 2, 4) in r
+    assert ("hers", 2, 6) in r
+
+
+def test_empty_pattern_ignored():
+    a = ACAutomaton()
+    a.build(["", "ab"])
+    a.add_pattern("")
+    assert a.find("ab") == [("ab", 0, 2)]
+    assert a.stats()["patterns"] == 1
+
+
+def test_long_overlap_pattern():
+    # 模式 a*50 在 a*1000 中：命中位置 0..950（951 个）
+    a = ACAutomaton()
+    a.build(["a" * 50])
+    r = a.find("a" * 1000)
+    assert len(r) == 951
+
+
+def test_big_text_linear():
+    # 50k 文本 + 1000 模式，线性秒级完成
+    pats = ["cat", "dog"] + ["k%04d" % i for i in range(998)]
+    a = ACAutomaton()
+    a.build(pats)
+    text = "catdog" * 8333                # 49998 字符
+    r = a.find(text)
+    assert len(r) == 8333 * 2             # cat 与 dog 各 8333
+
+
+def test_hit_order_insertion():
+    # 同一位置多命中按模式插入序输出
+    a = ACAutomaton()
+    a.build(["ab", "b"])
+    assert a.find("ab") == [("ab", 0, 2), ("b", 1, 2)]
+
+
+def test_unicode_mixed():
+    a = ACAutomaton()
+    a.build(["中文", "en", "中英混合"])
+    r = a.find("xx中文en中英混合")
+    assert ("中文", 2, 4) in r
+    assert ("en", 4, 6) in r
+    assert ("中英混合", 6, 10) in r

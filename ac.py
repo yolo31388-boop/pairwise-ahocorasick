@@ -1,10 +1,11 @@
-"""AC 自动机（Aho-Corasick）多模式匹配，支持流式逐字符输入。
+"""AC 自动机（Aho-Corasick）多模式匹配，支持增量构建与流式输入。
 
 模型：
 - build(patterns)：Trie + BFS fail 指针 + output 沿 fail 链传递。
+- add_pattern(p)：追加单个模式（空模式忽略）；插入 Trie 后重建
+  fail 指针，既有模式与新模式的匹配语义全部保持。
 - find(text)：一次性匹配，返回全部命中 [(pattern, start, end)...]。
-- feed(ch)：流式逐字符输入，只返回本字符位置触发的新命中；
-  内部状态（当前节点、位置游标）跨调用保持。
+- feed(ch)：流式逐字符输入，只返回本字符位置触发的新命中。
 - stats()：{patterns, nodes, depth, max_fail_chain}。
 """
 from __future__ import annotations
@@ -21,6 +22,10 @@ class ACAutomaton:
     # -------------------------------------------------- 接口
     def build(self, patterns: list[str]) -> None:
         """构建 AC 自动机（Trie + fail 指针）。"""
+        raise NotImplementedError
+
+    def add_pattern(self, pattern: str) -> None:
+        """增量追加单个模式并重建 fail 指针（空模式忽略）。"""
         raise NotImplementedError
 
     def find(self, text: str) -> list:

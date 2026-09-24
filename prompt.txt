@@ -1,12 +1,12 @@
-实现一个 AC 自动机（Aho-Corasick）多模式匹配引擎，支持流式逐
-字符输入与 fail 链统计，只用 Python 标准库。
+实现一个 AC 自动机（Aho-Corasick）多模式匹配引擎，支持增量
+构建、流式逐字符输入与 unicode 匹配，只用 Python 标准库。
 
 背景：ac.py 是骨架（ACAutomaton 类方法 raise NotImplementedError），
 tests/test_ac.py 是验收测试。
 
 需求（feature，按 AC 自动机论文 + 流式匹配核心语义）：
-1. build(patterns)：所有模式插入 Trie（根节点 0）；叶子节点
-   output 记录模式索引
+1. build(patterns)：所有非空模式插入 Trie（根节点 0；空模式忽略
+   不参与匹配与计数）；叶子节点 output 记录模式索引
 2. BFS 构建 fail 指针：
    - 根的孩子 fail = 根
    - 其他节点：沿父节点 fail 链找含该字符的最深前缀，找不到回根
@@ -14,14 +14,16 @@ tests/test_ac.py 是验收测试。
      模式在匹配时也能命中）
 3. find(text)：一次性扫描全部字符，返回全部命中
    [(pattern, start, end)...]（start = i - len(pattern) + 1），
-   含重叠与跨 fail 链命中
-4. feed(ch) -> list：流式逐字符接口：
-   - 内部保持"当前节点 _cur 与位置游标 _pos"
-   - 每次调用只推进一个字符，返回本字符位置触发的新命中
-     （同时继承 fail 链上的 output）
-   - 与 find 对同一文本结果完全一致
+   含重叠与跨 fail 链命中；同一位置多命中按模式插入序输出
+4. feed(ch) -> list：流式逐字符接口：内部保持当前节点与位置游标；
+   每次调用只推进一个字符，返回本位置触发的新命中（含 fail 链
+   继承）；与 find 对同一文本结果完全一致
 5. reset()：把当前节点与位置归零（可重复独立流式扫描）
-6. stats() -> {patterns, nodes, depth, max_fail_chain}：
+6. add_pattern(pattern)：增量追加单个模式（空模式忽略）：
+   - 插入 Trie 叶子并记录索引
+   - 重建全部 fail 指针与 output 继承（既有模式匹配语义必须保持，
+     新增模式与既有模式的组合重叠命中全部生效）
+7. stats() -> {patterns, nodes, depth, max_fail_chain}：
    max_fail_chain = 所有节点沿 fail 指针到根的最大链长度
 
 验收：
@@ -29,12 +31,16 @@ tests/test_ac.py 是验收测试。
 - 覆盖：单模式/多模式重叠（ushers 的 she+he）/abab 的 ab+bab
   三重命中/经典 ushers 四模式（含跨 fail 链的 hers）/重复模式
   各命中一次/单字符/无匹配/空文本/长文本线性/流式 feed 与 find
-  结果一致/feed 只返回本位置新命中（ab+b 的增量断言）/1000 模式
-  大集合命中/max_fail_chain（abcd/bcd/cd/d 后缀嵌套链 >=3）/
-  reset 后状态隔离
+  结果一致/feed 只返回本位置新命中（ab+b 增量断言）/1000 模式
+  大集合/max_fail_chain（abcd/bcd/cd/d 后缀嵌套链 >=3）/reset
+  状态隔离/中文模式（你好世界你好）/add_pattern 增量（he+she
+  后加 hers 命中）/add_pattern 重叠（ab 后加 bab 三重命中）/
+  连续 add 四个模式/空模式忽略（build 与 add 各验一次）/
+  极端长重叠（a*50 在 a*1000 中 951 个命中）/50k 文本 + 1000
+  模式线性秒级/同位置命中按插入序/中英混合 unicode
 
 要求：
 - 只 import 标准库；必须真实构建 Trie + fail 指针并沿其匹配
   （禁止对每个模式单独 str.find 再汇总，长文本与 1000 模式用例
   会验证线性复杂度）；feed 必须复用状态机（不能每字符全量重扫）；
-  别改测试
+  add_pattern 后必须保持全部既有语义；别改测试
