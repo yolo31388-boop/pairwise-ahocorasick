@@ -1,6 +1,6 @@
-# Pair-wise GSB 基线：AC 自动机多模式匹配
+# Pair-wise GSB 基线：AC 自动机（流式匹配 + fail 链统计）
 
-题目（feature 迭代）：实现 Aho-Corasick 多模式匹配引擎（Trie + fail 指针 + 线性扫描）。
+题目（feature 迭代）：实现 Aho-Corasick 多模式匹配引擎，含流式逐字符接口与 fail 链统计。
 
 - 骨架：`ac.py`（ACAutomaton 方法均 `raise NotImplementedError`）
 - 验收：`python -m pytest tests/test_ac.py -q` 全绿

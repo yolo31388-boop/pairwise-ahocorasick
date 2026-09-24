@@ -1,11 +1,11 @@
-"""AC 自动机（Aho-Corasick）多模式匹配。
+"""AC 自动机（Aho-Corasick）多模式匹配，支持流式逐字符输入。
 
 模型：
-- build(patterns)：把所有模式插入 Trie；BFS 构建 fail 指针；
-  节点 output 列表记录在该节点终结的模式索引，并沿 fail 链
-  继承可达的输出（标准 output 传递）。
-- find(text)：线性扫描文本（O(len))，走 Trie + fail 回退，
-  返回全部命中 [(pattern, start, end)...]（含重叠命中）。
+- build(patterns)：Trie + BFS fail 指针 + output 沿 fail 链传递。
+- find(text)：一次性匹配，返回全部命中 [(pattern, start, end)...]。
+- feed(ch)：流式逐字符输入，只返回本字符位置触发的新命中；
+  内部状态（当前节点、位置游标）跨调用保持。
+- stats()：{patterns, nodes, depth, max_fail_chain}。
 """
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ class ACAutomaton:
         # nodes[i] = {"children": {ch: idx}, "fail": int, "output": [pattern_idx]}
         self.nodes: list[dict] = []
         self.patterns: list[str] = []
+        self._cur = 0
+        self._pos = 0
 
     # -------------------------------------------------- 接口
     def build(self, patterns: list[str]) -> None:
@@ -22,9 +24,17 @@ class ACAutomaton:
         raise NotImplementedError
 
     def find(self, text: str) -> list:
-        """返回全部命中 [(pattern, start, end)...]，含重叠。"""
+        """一次性匹配，返回全部命中 [(pattern, start, end)...]。"""
+        raise NotImplementedError
+
+    def feed(self, ch: str) -> list:
+        """流式输入一个字符，返回本位置触发的新命中。"""
+        raise NotImplementedError
+
+    def reset(self) -> None:
+        """重置流式匹配状态（当前节点与位置）。"""
         raise NotImplementedError
 
     def stats(self) -> dict:
-        """返回 {patterns, nodes, depth}。"""
+        """返回 {patterns, nodes, depth, max_fail_chain}。"""
         raise NotImplementedError
