@@ -1,46 +1,53 @@
-实现一个 AC 自动机（Aho-Corasick）多模式匹配引擎，支持增量
-构建、流式逐字符输入与 unicode 匹配，只用 Python 标准库。
+实现一个 AC 自动机（Aho-Corasick）多模式匹配引擎，支持通配符
+模式、动态增删与流式输入，只用 Python 标准库。
 
 背景：ac.py 是骨架（ACAutomaton 类方法 raise NotImplementedError），
 tests/test_ac.py 是验收测试。
 
-需求（feature，按 AC 自动机论文 + 流式匹配核心语义）：
-1. build(patterns)：所有非空模式插入 Trie（根节点 0；空模式忽略
-   不参与匹配与计数）；叶子节点 output 记录模式索引
-2. BFS 构建 fail 指针：
-   - 根的孩子 fail = 根
-   - 其他节点：沿父节点 fail 链找含该字符的最深前缀，找不到回根
-   - 节点 output 沿 fail 链传递（output 继承，使 fail 可达的
-     模式在匹配时也能命中）
-3. find(text)：一次性扫描全部字符，返回全部命中
-   [(pattern, start, end)...]（start = i - len(pattern) + 1），
-   含重叠与跨 fail 链命中；同一位置多命中按模式插入序输出
-4. feed(ch) -> list：流式逐字符接口：内部保持当前节点与位置游标；
-   每次调用只推进一个字符，返回本位置触发的新命中（含 fail 链
-   继承）；与 find 对同一文本结果完全一致
-5. reset()：把当前节点与位置归零（可重复独立流式扫描）
-6. add_pattern(pattern)：增量追加单个模式（空模式忽略）：
-   - 插入 Trie 叶子并记录索引
-   - 重建全部 fail 指针与 output 继承（既有模式匹配语义必须保持，
-     新增模式与既有模式的组合重叠命中全部生效）
-7. stats() -> {patterns, nodes, depth, max_fail_chain}：
-   max_fail_chain = 所有节点沿 fail 指针到根的最大链长度
+需求（feature，按 AC 自动机 + 通配符匹配核心语义）：
+1. 模式分类：
+   - 普通模式：不含 '*' 与 '?'，构建 Trie + BFS fail 指针，
+     标准 AC 匹配（fail 链 output 继承，跨 fail 命中更长模式）
+   - 通配模式：'*' 匹配任意长度字符序列（含 0 个字符），'?'
+     匹配恰好 1 个任意字符；其余字符字面匹配
+2. build(patterns)：非空模式全部登记（空模式忽略）；普通模式进
+   Trie，通配模式独立维护
+3. 通配匹配语义（测试锁定）：
+   - 无 '*' 的模式（如 a?b）：在文本中滑动找第一个可行窗口，
+     返回 (start, start+len)
+   - 含 '*' 的模式按 * 分段：
+     - 模式以 * 开头：首段在文本中滑动找最早可行位置
+     - 模式不以 * 开头：首段必须从文本位置 0 匹配
+     - 模式以 * 结尾：命中 end = len(text)
+     - 模式不以 * 结尾：末段必须匹配到文本末尾
+     - 中间段从左到右贪心取最早可行位置（最短匹配）
+   - 示例：a*b 于 axxxb -> (0,5)；于 ab -> (0,2)；*end 于 xxend
+     -> (0,5)；start* 于 startxx -> (0,7)；a?b 于 aXb -> (0,3)、
+     于 ab 不匹配；a*b*c 于 aXbYc -> (0,5)；* 于 abc -> (0,3)
+4. find(text)：返回全部命中 [(pattern, start, end)...]，含普通与
+   通配命中，按 (end, start, 模式插入序) 排序
+5. feed(ch) -> list：流式逐字符（普通模式）：内部保持当前节点与
+   位置游标，每字符只返回本位置新命中（同位置按 (start, 插入序)
+   排序），与 find 对同一文本结果完全一致
+6. add_pattern(pattern)：增量追加（空模式忽略），追加后既有语义
+   全部保持
+7. remove_pattern(pattern) -> bool：删除第一次出现的该模式并重建，
+   不存在返回 False；删除后其余模式语义保持
+8. stats() -> {patterns, nodes, depth, max_fail_chain}：
+   max_fail_chain 为普通模式 AC 的 fail 链最大长度
 
 验收：
 - python -m pytest tests/test_ac.py -q 全绿
-- 覆盖：单模式/多模式重叠（ushers 的 she+he）/abab 的 ab+bab
-  三重命中/经典 ushers 四模式（含跨 fail 链的 hers）/重复模式
-  各命中一次/单字符/无匹配/空文本/长文本线性/流式 feed 与 find
-  结果一致/feed 只返回本位置新命中（ab+b 增量断言）/1000 模式
-  大集合/max_fail_chain（abcd/bcd/cd/d 后缀嵌套链 >=3）/reset
-  状态隔离/中文模式（你好世界你好）/add_pattern 增量（he+she
-  后加 hers 命中）/add_pattern 重叠（ab 后加 bab 三重命中）/
-  连续 add 四个模式/空模式忽略（build 与 add 各验一次）/
-  极端长重叠（a*50 在 a*1000 中 951 个命中）/50k 文本 + 1000
-  模式线性秒级/同位置命中按插入序/中英混合 unicode
+- 覆盖：全部 AC 基础（重叠/ushers/重复模式/1000 模式/长文本线性/
+  fail 链/流式增量/unicode/add 增量/极端重叠 a*50、a*1000/50k
+  文本线性/同位置命中顺序）+ 通配符（a*b 最短匹配/前缀 *end/
+  后缀 start*/a?b 单字符/多段 a*b*c/与普通模式混合同命中/
+  unicode 通配/无匹配/纯 *）+ 删除（删普通/删后加/删不存在返回
+  False/删重复模式留一个/删通配/增删交错）
 
 要求：
 - 只 import 标准库；必须真实构建 Trie + fail 指针并沿其匹配
-  （禁止对每个模式单独 str.find 再汇总，长文本与 1000 模式用例
-  会验证线性复杂度）；feed 必须复用状态机（不能每字符全量重扫）；
-  add_pattern 后必须保持全部既有语义；别改测试
+  （禁止对每个普通模式单独 str.find 再汇总，长文本与 1000 模式
+  用例会验证线性复杂度）；feed 必须复用状态机；通配模式必须真实
+  实现 * 分段与 ? 窗口匹配（禁止转正则库）；add/remove 后语义
+  保持；别改测试
